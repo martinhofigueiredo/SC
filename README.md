@@ -1,2 +1,2 @@
-# SC
+# SC2022
 Sistemas Computacionais
