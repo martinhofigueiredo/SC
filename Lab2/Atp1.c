@@ -2,8 +2,11 @@
 #include <unistd.h>
 #include <time.h>
 
-#define HOW_MANY_FORKS 2 //Number of forks. Testing from 1 to 4 should be enough
-//#define ENABLE_HEAVY_LOAD
+// Exercise:  Make heavy_load() last 15s every time DONE
+
+#define HOW_MANY_FORKS 4 //Number of forks. Testing from 1 to 4 should be enough
+#define ENABLE_HEAVY_LOAD
+#define BUSY_WAIT_S 15
 
 unsigned long _timestamp_sec(clockid_t clk_id){
     struct timespec tp;
@@ -12,8 +15,11 @@ unsigned long _timestamp_sec(clockid_t clk_id){
 }
 
 void heavy_load() {
-    unsigned long i = 10000000000L;
-    while (i--);
+    unsigned long process_ts_start = _timestamp_sec(CLOCK_PROCESS_CPUTIME_ID);
+    while(_timestamp_sec(CLOCK_PROCESS_CPUTIME_ID)-process_ts_start < BUSY_WAIT_S){
+    
+    }
+
 }
 
 int main() {
