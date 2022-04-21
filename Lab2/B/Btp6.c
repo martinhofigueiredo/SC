@@ -12,10 +12,9 @@ void* increment(void *arg)
 {
     while(1){
         pthread_mutex_lock(&counter_lock);
+        if(pthread_mutex_trylock(&mod_value_lock)== 0);
         counter ++;
-        
         if (counter%10 == 0){
-            pthread_mutex_lock(&mod_value_lock);
             mod_value ++;
             usleep(30*1000); //Simulate some heavy computation
             pthread_mutex_unlock(&mod_value_lock);
@@ -35,11 +34,12 @@ void* fastincrement(void *arg)
 {
     while(1){
         pthread_mutex_lock(&mod_value_lock);
-        pthread_mutex_lock(&counter_lock);
-        counter ++;
-        mod_value += 10;
-        //usleep(300*1000); //Simulate some heavy computation
-        pthread_mutex_unlock(&counter_lock);
+        if(pthread_mutex_trylock(&counter_lock) == 0){
+            counter ++;
+            mod_value += 10;
+            //usleep(300*1000); //Simulate some heavy computation
+            pthread_mutex_unlock(&counter_lock);
+        }
         pthread_mutex_unlock(&mod_value_lock);
 
         printf("\n FastIncrement counter:%d   mod_value:%d\n", counter, mod_value);
