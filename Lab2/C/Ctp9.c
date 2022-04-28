@@ -9,6 +9,7 @@
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+int mode;
 
 unsigned int data_space[BUFFER_MAX_SIZE];
 circ_buff_t buffer = { 
@@ -28,7 +29,7 @@ void* producer(void *arg)
         printf("ENTRA PRODUCER\n");
         if (circ_buff_push(&buffer, push_value ) == 0){
             printf("Producer: %u\n", push_value);
-            pthread_cond_signal(&cond);} 
+            mode ? pthread_cond_broadcast(&cond):pthread_cond_signal(&cond);} 
         else
             printf("Producer: buffer is full\n");
         printf("SAIU PRODUCER %ld\n", pthread_self());
@@ -70,6 +71,9 @@ int main(void)
         printf("\n mutex init has failed\n");
         return 1;
     }
+    
+    printf("Que modo?\nSignaling -> 0\nBroadcasting -> 1\n:");
+    scanf("%d", &mode);
     printf("Quantas threads produtoras? ");
     int nump;
     scanf("%d", &nump);

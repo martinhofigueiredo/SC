@@ -33,14 +33,15 @@ void* producer(void *arg)
     unsigned int push_value;
     while (1) {
         push_value = (rand() % 1000); //random [0,999]
-        if ( pthread_mutex_lock(&buff1_mutex) == 0 ) {
+        if ( pthread_mutex_lock(&buff1_mutex) == 0 ) { ///bem sucedido tem o mutex
             
             if (circ_buff_push(&buffer1, push_value ) == 0){
                 printf("Producer: %u\n", push_value);
             }
-            else
+            else{
+                pthread_cond_wait(&buff1_prod_condv)
                 printf("Producer: buffer is full\n"); 
-
+            }
             pthread_mutex_unlock(&buff1_mutex);
         }
         
@@ -61,9 +62,9 @@ void* relay(void *arg)
                 
                 if (circ_buff_pop(&buffer1, &pop_value)==0) {
                     //Success popping from 1
-
+                    pthread_cond_signal(&buff1_prod_condv)
                     if (circ_buff_push(&buffer2, pop_value ) == 0){
-                        
+                        pthread_cond_signal(&buff2_prod_condv)
                     } else {
                         //Push to Buff2 failed - Full
                         //Will drop the packet (Solution2)
@@ -95,9 +96,10 @@ void* consumer(void *arg)
            
             if (circ_buff_pop(&buffer2, &pop_value)==0)
                 printf("                              Consumer %ld: returned %u\n", pthread_self(), pop_value);
-            else
+            else{
+                pthread_cond_wait(&buff2_prod_condv);
                 printf("                              Consumer: buffer is empty\n");
-
+            }
             pthread_mutex_unlock(&buff2_mutex);
         }  
         
@@ -111,7 +113,9 @@ void* cli(void *arg)
     while (1) {
         getchar(); //Dont care about the char
         suspend_f = !suspend_f;
-        printf ("Suspend: %d\n", suspend_f);
+        char *string[3];
+        strcpy(string, (suspend_f ? "Yes":"No "));
+        printf ("Suspend: %s\n", string);
     }
     
     return NULL;
