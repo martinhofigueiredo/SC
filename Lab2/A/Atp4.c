@@ -26,14 +26,32 @@
 // 	unsigned int worker_pid; //Worker process id - to track the process pid.
 // } JOB_Handler;
 
-
-
 void dispatch_jobs(JOB_Handler jobs[], int number_of_jobs)
-{	
+{
+	//Process all jobs - One process (worker) per job, with
+	//a limit on the number of simultaneous workers (SIMULTANEOUS_WORKERS_MAX)
+	int status;
+	int pid;
+	int active_workers = 0;
 
-	//Process all jobs - One process (worker) per job
+	//Process all jobs. 
 	for (int i=0; i<number_of_jobs; i++){
 		int ret;
+
+		if (active_workers == SIMULTANEOUS_WORKERS_MAX){
+			//Workers are all busy. Let's wait for some vacant.
+			if ((pid = wait(&status))>0){
+				DEBUG_PRINTF("Returned from pid: %d with status: %d \n", pid, status);
+				active_workers--;
+				//Search the pid and save
+				for (int i=0; i<number_of_jobs; i++)
+					if (pid == jobs[i].worker_pid) {
+						JOB_update_result_and_processing_status_clear(jobs+i, status);
+						break; //No need to continue searching
+					}
+			}
+		}
+
 		if ( (ret=fork()) == 0){
 			// CHILD!
 			DEBUG_PRINTF("Worker pid: %d (job: %d with input: %lu)\n", getpid(), i+1, jobs[i].input_value);
@@ -44,14 +62,14 @@ void dispatch_jobs(JOB_Handler jobs[], int number_of_jobs)
 			//The PARENT
 			//Save the pid in the job handler - for later reference.
 			JOB_processing_status_update(jobs + i, ret /*worker pid*/);
+			active_workers++;
 		}
 	}
 
-	int status;
-	int pid;
+	
 	while ((pid = wait(&status))>0){
 		DEBUG_PRINTF("Returned from pid: %d with status: %d \n", pid, status);
-
+		active_workers--;
 		//Search the pid and save
 		for (int i=0; i<number_of_jobs; i++)
 			if (pid == jobs[i].worker_pid) {

@@ -3,7 +3,7 @@
 #include <time.h>
 
 #define HOW_MANY_FORKS 2 //Number of forks. Testing from 1 to 4 should be enough
-//#define ENABLE_HEAVY_LOAD
+#define ENABLE_HEAVY_LOAD
 
 unsigned long _timestamp_sec(clockid_t clk_id){
     struct timespec tp;
@@ -12,7 +12,7 @@ unsigned long _timestamp_sec(clockid_t clk_id){
 }
 
 void heavy_load() {
-    unsigned long i = 10000000000L;
+    unsigned long i = 48000000000L; // Tuned for gitpod
     while (i--);
 }
 
