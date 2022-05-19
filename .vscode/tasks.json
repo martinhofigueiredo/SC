@@ -6,7 +6,7 @@
         {
             "label": "Compile and Run",
             "type": "shell",
-            "command": "cd Lab3/A && make run ex=1",
+            "command": "cd Lab3/A && make run ex=22",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
