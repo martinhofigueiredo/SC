@@ -5,16 +5,18 @@
 #include <linux/cdev.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("I'd rather not say");
+MODULE_AUTHOR("Me, myself and I");
 MODULE_DESCRIPTION("Simple echo character device driver");
 MODULE_VERSION("0:0.1");
 
+/*
 static int echo_open(struct inode *inode, struct file *filp);
 static int echo_release(struct inode *inode, struct file *filp);
 ssize_t echo_read(struct file *filep, char __user *buff, size_t count, loff_t *offp);
 ssize_t echo_write(struct file *filep, const char __user *buff, size_t count, loff_t *offp);
 static int echo_init(void);
 static void echo_exit(void);
+*/
 
 static dev_t mydev;
 static struct cdev *mycdev;
@@ -55,17 +57,22 @@ ssize_t echo_write(struct file *filep, const char __user *buff, size_t count, lo
 static int echo_init(void)
 {
 	int result = -1;
-
 	// TODO (Exercise 2) register device driver so that:
-	// - Driver name is echo 
-	// - Major number is dynamically assigned
-	// - Minor number starts from 0
-	// - Only one device needs to be managed by the driver
+	// [X] Driver name is echo 
+	// [X] Major number is dynamically assigned
+	// [X] Minor number starts from 0
+	// [X] Only one device needs to be managed by the driver
 
+	result = alloc_chrdev_region(&mydev, 0, 1, "echo"); // <-- Driver Name
+	
 	if (result < 0){
 		printk(KERN_ERR "Failed to register echo device driver\n");
 		return result;
 	}
+
+	int major = MAJOR(mydev);
+	int minor = MINOR(mydev);
+
 
     // TODO (Exercise 4) Create struture to represent char devices
 

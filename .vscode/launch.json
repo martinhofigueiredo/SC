@@ -9,9 +9,9 @@
         ""
       ],
       "stopAtEntry": false,
-      "cwd": "/workspace/SC2022/Lab3/A",
+      "cwd": "/workspace/SC2022/Lab3/B/Btp3-1",
       "environment": [],
-      "program": "/workspace/SC2022/Lab3/A/build/Debug/outDebug",
+      "program": "/workspace/SC2022/Lab3/B/Btp3-1/build/Debug/outDebug",
       "internalConsoleOptions": "openOnSessionStart",
       "MIMode": "gdb",
       "miDebuggerPath": "/usr/bin/gdb",
