@@ -251,3 +251,268 @@ pattern is as follows:
 <ins>__Note__</ins>: File locks (struct flock and the fcntl() system call) were not made for threads. In particular, they do not provide mutual exclusion among threads. However, in the exercise of part A.2, the two threads are consumers (readers), while the producer (writer) is another process. Thus, the mutual exclusion is still enforced between the two processes. In other words, it works. Nevertheless, try modifying exercise 5 to use two consumer processes instead of two threads, and so do it properly! 
  
 Check the [`fcntl()`](https://man7.org/linux/man-pages/man2/fcntl.2.html) man page
+
+
+
+
+
+
+
+# Part B – Device driver (kernel space)  
+Device  drivers  are  pieces  of  software  in  the  operating  system  that  know,  in  detail, how  a  particular  device  works  and  how  to  interact  with  it  (e.g.,  send/receive  data through a network interface card). As low-level interactions with hardware frequently require access to privileged functions, device drivers are typically run within the OS kernel address space.  
+ 
+To implement and add device drivers to the kernel, two approaches can be followed: (i) add the device driver’s code to the kernel source tree itself, (ii) load the compiled device driver’s code to the kernel while it is running. The former approach is very rigid, requiring the whole system to be brought down and the kernel recompiled every time  a  new  piece  of  code  has  to  be  included.  The  latter  uses  __loadable  kernel modules__ (LKMs) to extend the functionality of the kernel (with the code that we want, i.e., the device driver) during runtime. LKMs can perform a variety of functions, from device and file system drivers to system calls. Indeed, we will use LKMs to develop our own device drivers through the remainder of this lab script.  
+ 
+This part of the script is divided into two phases, each one to be executed within a class  session.  During  the  first  phase,  we  will  get  acquainted  on  how  to  program simple  LKMs,  how  to  load/unload  them,  get  acquainted  with  basic  kernel  API functions, and how to interact with the developed LKMs through user-space. For the second part, we will develop a device driver implementing a “pipe” that can be used for user processes to exchange data between themselves, emulating a communication peripheral device.  
+ 
+__NOTE__:  All  development  and  testing  should  take  place  inside  a  Virtual  Machine  on your lab or personal computer as LKMs have free run of the system and can easily crash  it.  Lab  computers  should  already  have  the  utility  VMbox  with  a  Linux  image ready to be used.  
+
+__IF YOU HAVE SKIPPED OVER THE PREVIOUS NOTE, READ IT NOW BEFORE CONTINUING!!!__
+ 
+ 
+## 1. Building and using loadable kernel modules 
+When  you  boot  your  Linux  machine  (or  VM),  a  series  of  LKMs  to  control  multiple aspects of your system are already probably loaded4 and running. You can get a list with  all  modules  by  executing  the  [`lsmod`](https://linux.die.net/man/8/lsmod)  command.  Note  that  all  commands  to manage LKMs can only be executed using elevated privileges (either by logging in as  root  or  using  the  sudo  command,  which  is  more  common,  e.g.,  sudo  lsmod). Typically, ordinary users do not have permissions to “mess” with kernel-related stuff. 
+ 
+> The compiled LKM modules for most Linux distros are typically found under the `/lib/modules/$kernel-version$/` folder. 
+ 
+Let’s now have a look on how to build our first LKM; a basic skeleton is shown in the following code snippet. 
+ 
+```C
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("I'd rather not say");
+MODULE_DESCRIPTION("My first LKM");
+MODULE_VERSION("0:0.1");
+
+static int hello_init(void)
+{
+	printk(KERN_ALERT "Hello, world\n");
+	return 0;
+}
+
+static void hello_exit(void)
+{
+	printk(KERN_ALERT "Goodbye, cruel world\n");
+}
+
+module_init(hello_init);
+module_exit(hello_exit);
+
+```  
+A  kernel  module  must  implement  at  least  two  functions:  an  initialization  function, called when the module is loaded into the kernel, and a cleanup function, called upon module unloading. In the example above, we can see the function hello_init() being declared by the pseudo-macro module_init() as the module’s initialization function. 
+
+Similarly, function hello_exit() is declared by module_exit() as the module’s cleanup function.  Modules  can  optionally  include  miscellaneous  metadata  concerning,  for example, the type of license (macro MODULE_LICENSE) and author (MODULE_AUTHOR). Users can use the modinfo command to read this information from compiled modules.  
+
+LKM functions are part of the kernel and as such, it is not possible to use the standard C libraries as we have been doing for our previous user-space programs. Hence, we cannot call C library functions like printf(). Instead, modules can only call functions belonging to the kernel API. In the code example above, the `printk`() kernel function replaces the functionality of printf(). You can also find kernel functions to dynamically allocate memory, write to files, etc. 
+ 
+> __Footnote__: the information printed by `printk()` is not typically seen under the user console, but sent to a special kernel buffer that can be consulted, for example, using the dmesg command. Additionally, `printk()` defines multiple log levels (`KERN_EMERG`, `KERN_ALERT`, ..., `KERN_INFO`,  `KERN_DEBUG`) that denote the importance of the message. Consult the `printk()` documentation for more info.
+
+Due to their nature, LKMs are compiled differently from regular user-space applications (e.g., should not be linked to libraries, must be compiled with the same options  as  the  kernel,  etc.).  We  will  not  dwell  into  details  on  this  topic.  For  each exercise, a build script (a file named Makefile) will be provided that can be used by the make utility command to build the LKM. 
+ 
+The building process of a LKM results in a number of output files, among which, a .ko  file,  the  object  file  with  the  built  kernel  module.  Built  modules  can  be  installed (loaded) using the insmod utility command and the respective .ko file. A module can be uninstalled (unloaded) by invoking the rmmod utility with the module’s name as command argument (the module name is typically the name of the  .ko file, without the file extension). 
+ 
+<ins>__Exercise 1__</ins> 
+Download  the  hello.c  and  Makefile  files  to  your  virtual  machine  (or  shared  folder between  host  OS  and virtual  machine).  Open  the  Makefile  file.  At  the  end  you  will see the line obj-m := hello.o  ; this instructs the build tool to create several output files, including hello.ko, the object file with the hello kernel module. Now, try to build your  LKM  by  invoking  the  make  utility  command  inside  the  directory  that  contains both hello.c and Makefile files. 
+ 
+After  successfully  building  the  module,  use  the  modinfo  utility  to  confirm  that  the metadata is as expected. Next, load the module into the kernel and confirm that it is indeed  loaded  by  executing  the  command  lsmod  |  grep  hello  (check  grep  if  you want  to  know  what this does). Verify that the “Hello, world” message has been 
+logged.  When  done,  unload  the  module  and  confirm  that  the  operation  was 
+successful. Confirm that the expected message is logged upon removing the module. 
+ 
+ 
+## 2. Creating a device driver - the echo pseudo device driver 
+After knowing the basics on how to create an LKM and use it, we will now develop a device driver that just writes to the console what is written to the pseudo device(we call this a pseudo device because it does not control any I/O device, not physical not even virtual). 
+In Linux systems, devices mostly fall into one of two categories: character and block devices. Whereas the latter category allows accessing data in independent “blocks”, the  former  allows  data  to  be  retrieved  only  as  a  stream  of  characters  and  bytes. Nevertheless,  both  device  types  are  accessed  through  names  in  the  filesystem, corresponding to special files or device files6. These device files are conventionally located in the /dev directory. If you issue (try it!) the ls -l command for this directory, you  will  see  something  akin  to  the  next  image  snapshot,  where  device  files  for character and block devices are identified by a “c” and a “b” in the first column, respectively. 
+ 
+>Recall the UNIX saying that goes “On a UNIX system, everything is a file; if something is not a file, it is a process.” 
+
+```bash
+crw-rw-rw- 1 root   root    1,  3   Feb 23 1999   null
+crw------- 1 root   root   10,  1   Feb 23 1999   psaux
+crw------- 1 rubini tty     4,  1   Aug 16 22:22  tty1
+crw-rw-rw- 1 root   dialout 4,  64  Feb 23 11:19  ttyS0
+crw-rw-rw- 1 root   dialout 4,  65  Feb 23 00:00  ttyS1
+crw------- 1 root   sys     7,  1   Feb 23 1999   vcs1
+crw------- 1 root   sys     7,  129 Feb 23 1999   vcsa1
+crw-rw-rw- 1 root   root    1,  5   Feb 23 1999   zero
+
+```
+
+You can also see two numbers separated by a comma. These numbers are known as the __major__ (leftmost) and __minor__ (rightmost) device numbers, used by the kernel to identify a particular device. The major number identifies the driver associated with the  device.  In  the  snapshot  above,  devices  /dev/ttyS0  and  /dev/ttyS1  (the  virtual consoles) are both managed by driver 4. The kernel uses the major number at open time to dispatch execution to the appropriate device driver. The minor number is only used by the driver itself, not by the kernel, and is commonly used to identify a single device out of several (a device driver can control several devices, as shown in the above snapshot).  
+ 
+> __Note__:  The  kernel  also  keeps  a  list  with  all  the  currently  assigned  major  device numbers in the __`/proc/devices`__ file; you can run the command __`cat /proc/devices`__ to see its contents. 
+ 
+## 2.1. Allocation of a device number 
+When building an LKM for a device driver, users can either request the assignment of  pre-defined  major/minor  device  numbers  (static  assignment)  or  let  the  kernel assign them dynamically. Nowadays, major device numbers are commonly assigned dynamically  to  avoid  picking  an  existing  number.  For  example,  device  drivers  for character  devices  can  request  their  device  numbers  from  the  kernel  with  the `alloc_chrdev_region()` function (defined in `<linux/fs.h>`). The function returns a kernel data structure type `dev_t` (defined in `<linux/types.h>`) that holds both numbers. The LKM can use the macros MAJOR(dev_t dev) and MINOR(dev_t dev) to obtain the major and minor numbers, respectively. Upon unloading, LKMs should release the allocated  device  numbers.  For  character  devices,  this  is  done  by  invoking  the unregister_chrdev_region() function. 
+ 
+<ins>__Exercise 2__ </ins>
+The next code snippet belongs to the source code of the device driver we are going to develop throughout the remainder of this section. 
+
+```C
+static int echo_init(void)
+{
+	int alloc_result = -1;
+	// TODO (Exercise 2) register device driver so that:
+	// - Driver name is echo 
+	// - Major number is dynamically assigned
+	// - Minor number starts from 0
+	// - Only one device needs to be managed by the driver
+
+	if (alloc_result < 0){
+		printk(KERN_ERR "Failed to register echo device driver\n");
+		return result;
+	}
+
+	// TODO (Exercise 2) print "Echo device driver registered with major number X"
+	// to the kernel logging buffer so that:
+	// - X is the obtained major number during registration
+	// - Message printed using the informational log evel
+
+	return 0;
+} 
+``` 
+Download all the necessary files (echo.c and Makefile), and complete the `echo_init()` and  `echo_exit()`  functions  so  the  device  driver  is  properly  registered/unregistered, and the described log messages displayed on the kernel log buffer. Verify that you are  able  to  load  and  unload  the  module  to  the  kernel  properly,  and  that  the  major device number is freed (see the __`/proc/devices`__ file). 
+ 
+## 2.2. Creation of the device file 
+
+So far, we have developed a module that is able to register and obtain a valid device number from the kernel. However, after loading the module, you might have found (if not, try it now) that no device file for our echo driver has been created under the `/dev` directory!  This  is  normal,  as  the  device  file  is  not  created  automatically.  Indeed, dynamically allocating the major number has a disadvantage: you can’t create the device  files  in  advance  as  the  major  number  assigned  to  the  module  can’t  be guaranteed to always be the same. One way around this problem is to write a script that  immediately  creates7  the  required  device  files  after  loading  the  device  driver. This  is  possible  as  the  kernel  logs  all  the  assigned  major  device  numbers  in  the `/proc/devices` file; you can run the command `cat /proc/devices` to have a look into it (try it with and without your module loaded). Similarly to the compilation of kernel modules, we will not dwell on the details concerning the development of such scripts; these will also be provided to you throughout the next exercises. 
+ 
+> Device files can be created using the `mknod` utility. 
+
+<ins>__Exercise 3 __</ins>
+Download  the  `load_driver.sh`  and  `unload_driver.sh`  scripts.  These  allow  you  to load/unload an LKM device driver and create/delete the respective device files. Both scripts  take  as  argument  the  name  of  the  module  to  load/unload  (without  the  `.ko` extension), and must be run with elevated privileges. 
+ 
+First, make sure that the echo driver module has been unloaded since the previous exercises. Then, execute the load_driver.sh script. Verify that the module is indeed loaded and that a device file named “echo” has been created under /dev/ with the correct major and minor numbers. Afterward, run the unload_driver.sh script. Confirm that  the  module  has  been  unloaded,  the  device  file  removed,  and  that  the  major number has been released (check /proc/devices ). 
+ 
+## 2.3. Interacting with device files 
+Now that we have a device file associated with our driver, we can start interacting with it. As you may recall from Part A of this script, we have used a set of system calls such as `open()`, `close()`, `write()`, and `read()` to perform multiple operations on a file from programs living in user-space. In Linux, these same calls can be used for any kind of file, device files included! However, before these can be used, they must be  implemented  and  registered  by  the  respective  device  driver  in  kernel  space.  In the  following  section,  we  will  see  how  a  (character)  device  driver  can  register  its supported system call operations and how they are linked to its implementations by the  driver.  Afterward,  we  will  see  how  to  implement  the  most  common  operations 
+using our driver: `open()`, `close()`, `write()`, and `read()`. 
+ 
+### 2.3.1. Registering character devices and their operations 
+Internally,  the  kernel  uses  structures  of  type struct ` cdev ` (`<linux/cdev.h>`)  to represent a char device and their capabilities. Therefore, before the kernel can  be able to invoke the operations of a given device, the driver must allocate and register one  (or  more)  of  these  structures.  A  driver  can  allocate  a  new  cdev  using  the `cdev_alloc()` function.  
+A  cdev  structure  contains  two  members:  (i)  owner,  used  to  point  to  the  kernel module to which the driver belongs (always set with the macro THIS_MODULE ), (ii) ops, a pointer to a structure of type struct file_operations (`<linux/fs.h>`). This last structure specifies the different operations required to implement system calls such as `open()` and `read()` supported by the device driver. Essentially, it contains a set of pointers to functions defined by the driver, each of which implements the operations required  for  the  implementation  of  a  given  system  call.  You  can  find  a  detailed description of this structure in Ch. 3 of the LDD3 book, page 49 and following. 
+
+After creating and initializing the cdev structure, the device driver must register it in the kernel by invoking the cdev_add() function. As the main purpose of this device registration is to “tell” the kernel which operations are supported by the device, it should be done within the driver’s initialization function. Similarly, the driver’s cleanup function  should  remove  from  the  system  all  cdev  structures  it  has  previously registered; this can be done by using the cdev_del() function.  
+ 
+ 
+
+ 
+>Note: As soon as cdev_add returns, the device is “live” and its operations can be called  by  the  kernel.  Thus,  it  should  only  be  called  when  the  driver  is  completely initialized and ready to handle operations on the device. 
+ 
+<ins>__Exercise 4__</ins> 
+Extend the device driver’s echo_init() and echo_exit() functions so the device and its capabilities  are  registered/deregistered.  The  structure  file_operations  is  already created and filled to indicate the driver’s functions associated with each system call operation, so you need only to allocate, fill and register the cdev structure. To test if the registration was successful, load the module and execute echo 1 > /dev/echo ; you should see in the kernel log buffer the message `“echo_open(): Returning”`8  if everything is correctly done (ignore a potential error message in the user terminal). 
+ 
+ 
+### 2.3.2. Implementing `open()` and `close()` 
+As you may recall from Part A of this script, in Linux, a file (of any kind) must first be opened  by  an  application  before  performing  any  operations  on  it.  Likewise,  an application must close an opened file once done using it. In this section, we will learn how  to  implement  the  necessary  functionality  in  our  driver  for  the  support  of  the open() and `close()` system calls. 
+ 
+Drivers can implement the open file operation to be invoked every time an open() system call is executed. This operation is used to perform any initialization, device-specific procedures in preparation for later operations on the device. In most drivers, the open operation should perform the following tasks: 
+- Check for device-specific status and errors (e.g., device-not-ready); 
+- Initialize the device if being opened for the first time; 
+- Update  the  reading/writing  position,  if  necessary  (recall  file  offsets  from part⁠⁣⁢⁠ A in this project script); 
+- Allocate and fill any auxiliary control data structures (e.g., state information 
+ 
+The prototype for the open operation is: 
+```C
+int open(struct inode *inodep, struct file *filep); 
+```
+> __Note__: driver’s operation methods are invoked by the kernel upon certain events such as when a given process invokes a system call. Therefore, the arguments of these methods  are  used  by  the  kernel  to  pass  relevant  information  into  the  driver implementation. 
+ 
+> Why do we see such a message? In summary, the executed command line command tries to write “1” to the file /dev/echo ... our device file! Recall that before being able to write to a file, it must first be opened using the system call `open()`. Well, that’s what happened here! However, since we didn’t implement the support for it in our driver, yet, ... the command stops dead there and no `write()` operation is even tried :)
+
+The first order of business is usually to identify which device is being opened (recall that a driver can control multiple devices). As we have seen in the previous section, devices are registered using the cdev structure. However, from the open prototype we  see  that  such  structure  type  is  not  provided.  Instead,  two  new  structures  are 
+available: 
+- struct inode - This structure represents a file, a regular or a special file. Note that  even  though  a  given  file  may  be  opened  simultaneously  by  different processes, the kernel keeps a single struct inode. Among other members, this struct includes the member struct cdev *i_cdev that points to the cdev struct of the corresponding device. This is all you need to know for this project about the inode structure. You can find detailed information on this structure in Ch. 3 of the LDD3 book, on page 55; 
+- struct  file  -  It  represents  a  file  descriptor,  which  is  returned  on  an  open system  call.  Among  other  members,  this  struct  includes  the  member  void *private_data that can be used by a device driver to maintain state information across system calls. For this project, this is all you need to know about  the  file  structure.  Detailed  description  on  this  structure  is  available  in Ch. 3 of the LDD3 book, on page 53 and following. 
+ 
+Because some operations provided by the device driver, such as read and write, do not take as argument the address of a struct inode, but only the address of a struct file, the private_data member of the struct file is initialized during the open method with the address of the corresponding struct cdev. 
+ 
+For the `close()` system call, device drivers implement the release operation whose prototype is as follows: 
+
+```C
+int release(struct inode *inodep, struct file *filep); 
+```
+
+Here,  the  arguments  are  the  same  as  for  the  open  operation,  and  this  operation usually undoes what the open operation has done (e.g., free data structures). Note that  not  every  invocation  of  the  `close(`  system  call  leads  to  the  invocation  of  the release operation. If you want some operation to be performed on every invocation of the `close()` system call, define a flush file operation, which is indeed invoked on every close system call. A more detailed discussion of these issues can be found in Ch. 3 of the LDD3 book, on page 59. 
+ 
+<ins>__Exercise 5__</ins>
+Complete the `echo_open()` function of the echo device driver. To that end, initialize only the private_data member of struct file to point to struct cdev, and print a short message  telling  what  was  just  done.  Also,  change  the  return  code  to  0  to  signal success. The release operation does not need any changes for now.  
+ 
+Test the module by executing echo 1 > /dev/echo . This time, you should see in the kernel log buffer that the `echo_write()` and echo_release() functions are invoked as echo_`open()` is now functional. 
+ 
+ 
+## 2.3.3. Implementing `read()` and `write()` 
+A device is usually used for data input/output, therefore we would expect a device driver to provide operations supporting data transfer. In the case of the echo device driver we would like it to support: 
+- write - shows in the user console whatever an application writes to the device; 
+- read - returns how many characters have been written out by all applications to the device since the last time it was loaded. 
+The prototypes of the aforementioned operations are as follows: 
+```C
+ssize_t write(struct file *filep, const char __user *buff, size_t count, loff_t *offp);
+``` 
+`filep` is the file pointer, buff is a buffer used to transfer data either from user space to  the  kernel  or  vice-versa,  count  is  the  size  of  the  requested  transfer,  offp  is  a pointer  to  a  long  offset  type  object  that  indicates  the  file  position  the  user  is accessing.  The  offp  argument  is  needed  because  device  drivers  are  not  aware  of the file position: it is maintained by the file system layer. Nevertheless, so that that layer can update the file structure, usually the code should update the file position at *offp accordingly after the data transfer. In the case of the echo device, seeking does not make sense, hence there is no need to keep the file position. Because the default implementation of the operation allows seeking, the open operation must invoke the function: extern int nonseekable_open(struct inode * inode, struct file * filp); This way, the kernel will prevent an lseek() system call from succeeding. In addition, the llseek operation of the struct file_operations should be set to the special helper function no_llseek . Both read and write should return the number of bytes transferred, if the operation is  successful.  Otherwise,  if  no  byte  is  successfully  transferred,  then  they  should return a negative number. However, if there is an error after successfully transferring some bytes, both should return the number of bytes transferred, and an error code in  the  following  call  of  the  function.  This  requires  the  device  driver  to  recall  the occurrence of an error from a call to the next. However, the echo device driver needs not  worry  with  partial  success  because  it  will  always  succeed  in  performing  those operations. Both in `read()` and in `write()`, the buff argument is a pointer to user space, and should not be directly dereferenced by kernel code. (An explanation of why this is so can be found  in  Ch.  3  of  the  LDD3  book,  on  pages  63  and  64.)  Instead,  you  can  use  the following kernel functions, which are defined in <asm/uaccess.h>: unsigned long copy_to_user(void __user *to,const void *from,unsigned long count); unsigned long copy_from_user(void *to, const void __user *from, unsigned long count); 
+
+Note that the pages containing the buffer may not be in memory, and the process may  be  put  to  sleep  while  the  page  is  brought  in.  Therefore  functions  that  invoke them  must  be  reentrant  and  be  able  to  execute  concurrently  with  other  driver functions. 
+
+Exercise 6 
+Extend the device driver with the following changes: 
+- Modify the device driver’s open operation to inform the kernel that the device is non seekable. 
+- Complete the write file operation. It should read the data from the user space buffer  to  a  kernel  space  buffer,  and  then  print  it.  Make  sure  that  the  last character in the buffer is code 0. Do not forget to free any buffer you allocate in the kernel. 
+- Implement  a  small  test  program  to  test  the  system  calls  `open()`,  `close()`, lseek(), and `write()` on the device driver. 
+- Modify  the  write  operation  so  that  it  updates  the  number  of  characters  it echoes. 
+- Complete the read file operation so it returns the total number of characters echoed by the device. 
+- Change the test program to also test the read operation. 
+ 
+ 
+3. Creating a device driver for a pipe inter-process communication 
+In this section we will strengthen our knowledge of the device driver creation process by creating a pipe device, i.e., a FIFO that can be written by one process and read by  another.  Linux  already  implements  what  are  commonly  known  as  Unix  pipes represented  in  the  shell  input  with  the  character  ‘|’.  These  pipes  are  a  way  of connecting  the  output  of  a  process  to  the  input  of  another  one,  thus  allowing  their execution  in  a  chain.  These  are  extremely  useful  in  scripting  and  allow  creating powerful sequences of commands. 
+ 
+In our case, we will design a device driver that implements the pipe functionality. In particular, it will implement a circular buffer (see the last exercise of lab assignment two)  that  can  be  opened  by  a  producer  or  a  consumer  process  and  allow  them  to exchange information.  
+ 
+Both system calls for writing and reading should be synchronous and non-blocking, i.e., in the absence of free space (for writing) or new data (for reading) they should return immediately with the appropriate error indication. 
+ 
+ 
+<ins>__Exercise 7__</ins> 
+Use as base the device driver you developed in exercise 5 (should have empty read and write functions): 
+- Give it the name “mypipe” and change all functions names accordingly. 
+- Include “buff_helper.h” with the circular buffer definitions and functions. 
+- Right  below  this  include,  declare  your  circular  buffer  reserving  space  (in mypipe_buffer).  Note  this  will  instantiate  the  buffer  as  a  global  variable within the module.   
+ 
+```C
+#define BUFFER_MAX_SIZE 10 
+ 
+unsigned int data_space[BUFFER_MAX_SIZE]; 
+circ_buff_t mypipe_buffer = {  
+    data_space, 
+    BUFFER_MAX_SIZE, 
+    0, 
+    0 
+}; 
+``` 
+- Make  sure  all  functions  will  return  0,  instead  of  -1,  so  you  can  test  them without generating errors. 
+- Replace “echo” with “mypipe” at the end of the Makefile. 
+ 
+At this point, compile the device driver and load it. It will not do any useful function, yet, but you can test if this template is ok. After loading the device driver, try writing to it with `echo AAA > /dev/mypipe`. Similarly, try reading with `cat /dev/mypipe`. None of these operations should do anything expect printing the printk messages. 
+ 
+If this is all ok, then let’s proceed to the next exercise, which consists in adding the necessary code to ge the desired functionality. 
+ 
+<ins>__Exercise 8__ </ins>
+Use as base the device driver you developed in exercise 5 (should have empty read and write functions): 
+- Modify the device driver open function to inform the kernel that the device is non seekable similarly to Exercise 6. 
+- Complete  the  read  and  write  device  functions.  Use  the  circular  buffer functions circ_buff_pop and circ_buff_push, respectively, to access the kernel FIFO buffer mypipe_buffer. Note that these functions read/write one byte  at  a time. Thus,  you  will  need  to  use  them  inside  an  adequate  loop  to transfer  from/to  the  user  buffer  (argument  of  the  device  functions).  The number  of  bytes  to  transfer  is  at  most  count  (argument  of  the  device functions). The loop should finish if the pop function returns buffer empty, or if the push function returns buffer full. 
+- The return value of the read and write functions should be the actual number of  bytes  read  or  written.  If  no  byte  was  read  or  written  (FIFO  empty  or  full from the start), the functions should return an error condition (-1). 
+ 
+Note that the circular buffer (the FIFO mypipe_buffer) is implicitly released when the module is unloaded. 
+ 
+Similarly to the previous exercise (7), after compiling and loading, test your device writing  to  it  with echo  AAA  >  /dev/mypipe.  Then  read  from  it  with cat dev/mypipe. You should see what you wrote before. 
+ 
+A better test consists in writing a simple program that launches a producer process and a consumer process, which communicate via this device (pretty much as if it was a file!). 
+ 
+If you feel up to the challenge, you can further complicate the device!  
+- Instead of doing a static allocation of the circular buffer as with mypipe_buffer, try doing dynamic allocation with kmalloc() when the module is installed. Don’t forget to release it when the module is removed. 
+- You can verify in the open function whether the device is already open and if for writing or reading. You can force an error if more than one process tries to open the device for the same function, either writing or reading. Note that the circular buffer functions, as they are, may not work well with multiple readers or writers. 
+- You can save the circular buffer in a file when the module is removed and you can  load  the  file  contents  to  the  circular  buffer  in  memory  upon  module insertion. 
+- The ultimate challenge will be to do blocking read/write operations, so that the device driver waits until it can satisfy the user request (e.g., enough space in the buffer or enough data in the buffer) 
+ 
+Note that all these suggestions are beyond the objectives of this course! 

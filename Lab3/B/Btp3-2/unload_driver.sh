@@ -7,7 +7,9 @@ else
     module="$1"
     #echo "Module Device: $1"
 fi
+#same as load
 rmmod $module || exit 1
-# remove nodes
+#remove kernel module
+# remove nodes files
 rm -f /dev/${module} /dev/${module}?
 exit 0
