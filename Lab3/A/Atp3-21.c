@@ -21,6 +21,7 @@ void *oddNumbersConsumer(void *vargp)
     // - if file exists, overwrite existing data
     // - set permissions to 0644
     file_descriptor_odd = open(ODD_NUMBERS_FILE_NAME, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    
     if (file_descriptor_odd == -1)
     {
         fprintf(stderr, "Error: %s: %s\n", ODD_NUMBERS_FILE_NAME, strerror(errno));
@@ -123,7 +124,7 @@ int main()
         return -1;
     }
 
-    pthread_create(&tid_2, NULL, oddNumbersConsumer, &file_descriptor1);
+    pthread_create(&tid_1, NULL, oddNumbersConsumer, &file_descriptor1);
     pthread_create(&tid_2, NULL, evenNumbersConsumer, &file_descriptor2);
 
     pthread_join(tid_1, NULL);
